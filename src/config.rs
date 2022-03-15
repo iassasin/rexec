@@ -4,14 +4,14 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppConfig {
-    pub http: HttpConfig,
+	pub http: HttpConfig,
 	pub tasks: HashMap<String, TaskConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HttpConfig {
 	pub listen_ip: String,
-    pub port: u16,
+	pub port: u16,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
