@@ -54,10 +54,13 @@ fn process_request(request: &mut Request, tasks: &HashMap<String, TaskConfig>) -
 			.spawn()
 			.map_err(|err| "Can't spawn process: ".to_string() + &err.to_string())?;
 
-		command.stdin.as_ref()
-			.ok_or("Can't write body to process: no stdin")?
-			.write_all(&buf)
+		let mut stdin = command.stdin.take()
+			.ok_or("Can't write body to process: no stdin")?;
+
+		stdin.write_all(&buf)
 			.map_err(|err| "Can't write body to process: ".to_string() + &err.to_string())?;
+
+		drop(stdin);
 
 		let mut outbuf = vec![];
 		let _outsize = command.stdout.as_mut()

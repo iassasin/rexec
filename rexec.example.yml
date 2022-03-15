@@ -5,3 +5,5 @@ http:
 tasks:
   test:
     command: echo Hello, world
+  echo:
+    command: cat
