@@ -1,35 +1,76 @@
 mod config;
 
-use std::{vec, io::{Cursor, Write, Read}, collections::HashMap, process::{Command, Stdio}};
+use std::{
+	vec,
+	io::{Cursor, Write, Read},
+	collections::HashMap,
+	process::{Command, Stdio},
+	sync::{Arc, Condvar, Mutex}, thread
+};
 
 use config::{AppConfig, TaskConfig};
+use nanoid::nanoid;
 use tiny_http::{Server, Response, Request};
 
 fn main() {
-	let config = AppConfig::read_from_file("./rexec.yml");
+	let config = Arc::new(AppConfig::read_from_file("./rexec.yml"));
 
 	let listen_address = format!("{}:{}", config.http.listen_ip, config.http.port);
 	println!("Listen to address: {:?}", listen_address);
 
-	let server = Server::http((config.http.listen_ip, config.http.port)).unwrap();
+	let server = Server::http((config.http.listen_ip.clone(), config.http.port)).unwrap();
+
+	let threads_orig = Arc::new((Mutex::new(0u64), Condvar::new()));
+	let (threads_counter, change_event) = &*threads_orig;
 
 	for mut request in server.incoming_requests() {
-		println!("received request! method: {:?}, url: {:?}, headers: {:?}",
+		let req_id = nanoid!(10);
+
+		println!("[{:?}] received request! method: {:?}, url: {:?}, headers: {:?}",
+			req_id,
 			request.method(),
 			request.url(),
-			request.headers()
+			request.headers(),
 		);
 
-		let response = match process_request(&mut request, &config.tasks) {
-			Ok(response) => response,
-			Err(err) => Response::from_string(err).with_status_code(500),
-		};
+		let threads = threads_orig.clone();
+		let config = config.clone();
 
-		request.respond(response).unwrap_or_default();
+		{
+			let mut cnt = threads_counter.lock().unwrap_or_else(|err| err.into_inner());
+			while *cnt >= config.http.max_threads {
+				cnt = change_event.wait(cnt).unwrap_or_else(|err| err.into_inner());
+			}
+
+			*cnt += 1;
+		}
+
+		thread::spawn(move || {
+			let response = match process_request(&req_id, &mut request, &config.tasks) {
+				Ok(response) => response,
+				Err(err) => {
+					println!("[{:?}] Error: {:?}", req_id, err);
+					Response::from_string(err).with_status_code(500)
+				},
+			};
+
+			let status_code = response.status_code().0;
+
+			request.respond(response).unwrap_or_default();
+
+			{
+				let mut cnt = threads.0.lock().unwrap_or_else(|err| err.into_inner());
+				*cnt -= 1;
+
+				threads.1.notify_all();
+			}
+
+			println!("[{:?}] Request processed: {:?}", req_id, status_code);
+		});
 	}
 }
 
-fn process_request(request: &mut Request, tasks: &HashMap<String, TaskConfig>) -> Result<Response<Cursor<Vec<u8>>>, String> {
+fn process_request(_req_id: &String, request: &mut Request, tasks: &HashMap<String, TaskConfig>) -> Result<Response<Cursor<Vec<u8>>>, String> {
 	const TASKS_PATH: &str = "/task/";
 
 	let url = request.url().to_string();

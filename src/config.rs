@@ -12,6 +12,7 @@ pub struct AppConfig {
 pub struct HttpConfig {
 	pub listen_ip: String,
 	pub port: u16,
+	pub max_threads: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
