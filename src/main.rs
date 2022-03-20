@@ -46,13 +46,10 @@ fn main() {
 		}
 
 		thread::spawn(move || {
-			let response = match process_request(&req_id, &mut request, &config.tasks) {
-				Ok(response) => response,
-				Err(err) => {
-					println!("[{:?}] Error: {:?}", req_id, err);
-					Response::from_string(err).with_status_code(500)
-				},
-			};
+			let response = process_request(&req_id, &mut request, &config.tasks).unwrap_or_else(|err| {
+				println!("[{:?}] Error: {:?}", req_id, err);
+				Response::from_string(err).with_status_code(500)
+			});
 
 			let status_code = response.status_code().0;
 
